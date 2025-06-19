@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35919.96 d17.13
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "RPGCombatDSL", "RPGCombatDSL\RPGCombatDSL.fsproj", "{5EBBF30E-49D3-4B6D-A4AC-03F2269C3BFE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5EBBF30E-49D3-4B6D-A4AC-03F2269C3BFE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5EBBF30E-49D3-4B6D-A4AC-03F2269C3BFE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5EBBF30E-49D3-4B6D-A4AC-03F2269C3BFE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5EBBF30E-49D3-4B6D-A4AC-03F2269C3BFE}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {0954757B-76C0-4966-9F9F-5A0D37FE2473}
+	EndGlobalSection
+EndGlobal
