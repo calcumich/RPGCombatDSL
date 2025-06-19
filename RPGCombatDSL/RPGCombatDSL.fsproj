@@ -6,10 +6,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include=".github\workflows\.build.yml" />
     <Compile Include="Types.fs" />
     <Compile Include="Engine.fs" />
     <Compile Include="Parser.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
+
+  <ItemGroup />
 
 </Project>

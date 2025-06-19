@@ -1,0 +1,27 @@
+name: Build F# Project
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.x'  # or whatever version you use
+
+    - name: Restore dependencies
+      run: dotnet restore RPGCombatDSL/RPGCombatDSL.fsproj
+
+    - name: Build project
+      run: dotnet build RPGCombatDSL/RPGCombatDSL.fsproj -c Release

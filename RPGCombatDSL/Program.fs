@@ -1,5 +1,6 @@
-﻿open Types
+open Types
 open Engine
+open Parser
 
 let alice = {
     Name = "Alice"
@@ -13,10 +14,12 @@ let bob = {
 
 let characters = [ alice.Name, alice; bob.Name, bob ] |> Map.ofList
 
-let script = [
-    { Actor = "Alice"; Action = Attack "Bob" }
-    { Actor = "Bob"; Action = Attack "Alice" }
-]
+let scriptText = """
+Alice attacks Bob
+Bob defends
+"""
+
+let script = parseTurns scriptText
 
 let simulateBattle turns =
     let finalState = List.fold applyAction characters turns
