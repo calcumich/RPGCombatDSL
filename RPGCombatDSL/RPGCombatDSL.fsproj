@@ -6,7 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include=".github\workflows\.build.yml" />
+    <EmbeddedResource Remove=".github\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="Types.fs" />
     <Compile Include="Engine.fs" />
     <Compile Include="Parser.fs" />
