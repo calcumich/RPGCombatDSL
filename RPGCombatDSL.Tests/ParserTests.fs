@@ -5,11 +5,8 @@ open Types
 open Xunit
 
 [<Fact>]
-let ``parseTurns parses supported commands in order`` () =
-    let script = """
-Alice attacks Bob
-Bob defends
-"""
+let ``valid lines are parsed in order`` () =
+    let script = "Alice attacks Bob\nBob defends"
 
     let turns = parseTurns script
 
@@ -22,14 +19,15 @@ Bob defends
     Assert.Equal<Turn list>(expected, turns)
 
 [<Fact>]
-let ``parseTurns skips unsupported lines`` () =
-    let script = """
-Alice attacks Bob
-Alice uses HealthPotion
-"""
+let ``invalid lines are ignored`` () =
+    let script = "Alice attacks Bob\nunknown command\nBob defends"
 
     let turns = parseTurns script
 
-    let expected = [ { Actor = "Alice"; Action = Attack "Bob" } ]
+    let expected =
+        [
+            { Actor = "Alice"; Action = Attack "Bob" }
+            { Actor = "Bob"; Action = Defend }
+        ]
 
     Assert.Equal<Turn list>(expected, turns)

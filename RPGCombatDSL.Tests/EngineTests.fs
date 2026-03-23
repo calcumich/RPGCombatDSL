@@ -11,34 +11,46 @@ let private actor name hp attack defense =
         Stats = { HP = hp; Attack = attack; Defense = defense }
     }
 
-let private characters =
-    [ actor "Alice" 100 20 10; actor "Bob" 90 15 5 ]
-    |> Map.ofList
-
 [<Fact>]
-let ``applyAction attack lowers target hp by mitigated damage`` () =
+let ``attack action damages target`` () =
+    let characters =
+        [ actor "Alice" 100 20 5; actor "Bob" 50 10 2 ]
+        |> Map.ofList
+
     let updated =
         applyAction characters { Actor = "Alice"; Action = Attack "Bob" }
 
-    Assert.Equal(75, updated["Bob"].Stats.HP)
+    Assert.Equal(32, updated["Bob"].Stats.HP)
 
 [<Fact>]
-let ``applyAction attack always deals at least one damage`` () =
-    let tank =
-        {
-            Name = "Tank"
-            Stats = { HP = 40; Attack = 3; Defense = 100 }
-        }
+let ``defend increases defense`` () =
+    let characters =
+        [ actor "Alice" 100 20 5 ]
+        |> Map.ofList
 
     let updated =
-        applyAction
-            (characters |> Map.add tank.Name tank)
-            { Actor = "Bob"; Action = Attack "Tank" }
+        applyAction characters { Actor = "Alice"; Action = Defend }
 
-    Assert.Equal(39, updated["Tank"].Stats.HP)
+    Assert.Equal(10, updated["Alice"].Stats.Defense)
 
 [<Fact>]
-let ``applyAction leaves state unchanged for defend`` () =
-    let updated = applyAction characters { Actor = "Bob"; Action = Defend }
+let ``invalid attack leaves state unchanged`` () =
+    let characters =
+        [ actor "Alice" 100 20 5 ]
+        |> Map.ofList
+
+    let updated =
+        applyAction characters { Actor = "Alice"; Action = Attack "Unknown" }
 
     Assert.Equal<Map<string, Character>>(characters, updated)
+
+[<Fact>]
+let ``attack always deals at least one damage`` () =
+    let characters =
+        [ actor "Bob" 90 15 5; actor "Tank" 40 3 100 ]
+        |> Map.ofList
+
+    let updated =
+        applyAction characters { Actor = "Bob"; Action = Attack "Tank" }
+
+    Assert.Equal(39, updated["Tank"].Stats.HP)
