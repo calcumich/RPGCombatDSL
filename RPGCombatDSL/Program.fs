@@ -19,8 +19,6 @@ Alice attacks Bob
 Bob defends
 """
 
-let script = parseTurns scriptText
-
 let simulateBattle turns =
     let finalState = List.fold applyAction characters turns
     for KeyValue(name, char) in finalState do
@@ -28,5 +26,12 @@ let simulateBattle turns =
 
 [<EntryPoint>]
 let main _ =
-    simulateBattle script
-    0
+    match parseTurns scriptText with
+    | Ok script ->
+        simulateBattle script
+        0
+    | Error errors ->
+        for error in errors do
+            printfn "Parse error on line %d: %s (%s)" error.LineNumber error.Message error.LineText
+
+        1
