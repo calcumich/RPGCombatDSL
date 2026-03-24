@@ -21,7 +21,10 @@ jobs:
         dotnet-version: '8.x'  # or whatever version you use
 
     - name: Restore dependencies
-      run: dotnet restore RPGCombatDSL/RPGCombatDSL.fsproj
+      run: dotnet restore RPGCombatDSL.sln
 
     - name: Build project
-      run: dotnet build RPGCombatDSL/RPGCombatDSL.fsproj -c Release
+      run: dotnet build RPGCombatDSL.sln -c Release --no-restore
+
+    - name: Run tests
+      run: dotnet test RPGCombatDSL.sln -c Release --no-build

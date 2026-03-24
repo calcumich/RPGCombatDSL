@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.13.35919.96 d17.13
@@ -17,10 +17,10 @@ Global
 		{5EBBF30E-49D3-4B6D-A4AC-03F2269C3BFE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5EBBF30E-49D3-4B6D-A4AC-03F2269C3BFE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5EBBF30E-49D3-4B6D-A4AC-03F2269C3BFE}.Release|Any CPU.Build.0 = Release|Any CPU
-                {A250EFE9-2EED-4CE1-8A82-B99089C65CAE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-                {A250EFE9-2EED-4CE1-8A82-B99089C65CAE}.Debug|Any CPU.Build.0 = Debug|Any CPU
-                {A250EFE9-2EED-4CE1-8A82-B99089C65CAE}.Release|Any CPU.ActiveCfg = Release|Any CPU
-                {A250EFE9-2EED-4CE1-8A82-B99089C65CAE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A250EFE9-2EED-4CE1-8A82-B99089C65CAE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A250EFE9-2EED-4CE1-8A82-B99089C65CAE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A250EFE9-2EED-4CE1-8A82-B99089C65CAE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A250EFE9-2EED-4CE1-8A82-B99089C65CAE}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
