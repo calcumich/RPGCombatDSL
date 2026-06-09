@@ -17,6 +17,8 @@ let characters = [ alice.Name, alice; bob.Name, bob ] |> Map.ofList
 let scriptText = """
 Alice attacks Bob
 Bob defends
+Alice uses HealthPotion
+Bob casts Fireball on Alice
 """
 
 let simulateBattle turns =

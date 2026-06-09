@@ -1,7 +1,7 @@
 module Parser
 
-open System
 open Types
+open Lexer
 
 type ParseError = {
     LineNumber: int
@@ -14,46 +14,109 @@ type ParseResult = {
     Errors: ParseError list
 }
 
-/// Parse a single line of the DSL into either a Turn or an error.
-let private parseLine (lineNumber: int) (line: string) : Result<Turn, ParseError> =
-    let words =
-        line.Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries)
-        |> Array.toList
+type private Cursor = {
+    mutable Pos: int
+    Tokens: PositionedToken[]
+    Lines: string[]
+}
 
-    match words with
-    | [ actor; "attacks"; target ] ->
-        Ok { Actor = actor; Action = Attack target }
-    | [ actor; "defends" ] ->
-        Ok { Actor = actor; Action = Defend }
+let private peek (c: Cursor) = c.Tokens.[c.Pos]
+
+let private advance (c: Cursor) =
+    if c.Pos < c.Tokens.Length - 1 then c.Pos <- c.Pos + 1
+
+let private lineText (c: Cursor) lineNumber =
+    let idx = lineNumber - 1
+    if idx >= 0 && idx < c.Lines.Length then c.Lines.[idx].Trim() else ""
+
+let private err (c: Cursor) line message =
+    { LineNumber = line; LineText = lineText c line; Message = message }
+
+let private recoverToNextLine (c: Cursor) =
+    while (peek c).Token <> TNewline && (peek c).Token <> TEof do
+        advance c
+    if (peek c).Token = TNewline then advance c
+
+let private expectIdent (c: Cursor) (whatFor: string) : Result<string, ParseError> =
+    let t = peek c
+    match t.Token with
+    | TIdent name ->
+        advance c
+        Ok name
     | _ ->
-        Error {
-            LineNumber = lineNumber
-            LineText = line
-            Message = "Unsupported command"
-        }
+        Error (err c t.Line (sprintf "Expected %s" whatFor))
 
-/// Parse a script consisting of one command per line into turns and parse errors.
+let private parseAction (c: Cursor) : Result<Action, ParseError> =
+    let t = peek c
+    match t.Token with
+    | TAttacks ->
+        advance c
+        expectIdent c "target name after 'attacks'" |> Result.map Attack
+    | TDefends ->
+        advance c
+        Ok Defend
+    | TUses ->
+        advance c
+        expectIdent c "item name after 'uses'" |> Result.map UseItem
+    | TCasts ->
+        advance c
+        match expectIdent c "spell name after 'casts'" with
+        | Error e -> Error e
+        | Ok spell ->
+            match (peek c).Token with
+            | TOn ->
+                advance c
+                expectIdent c "target name after 'on'"
+                |> Result.map (fun target -> CastSpell(spell, target))
+            | _ ->
+                Ok (CastSpell(spell, ""))
+    | _ ->
+        Error (err c t.Line "Expected an action (attacks, defends, uses, casts)")
+
+let private parseTurn (c: Cursor) : Result<Turn, ParseError> =
+    let startTok = peek c
+    match startTok.Token with
+    | TIdent actor ->
+        advance c
+        parseAction c
+        |> Result.map (fun action -> { Actor = actor; Action = action })
+    | _ ->
+        Error (err c startTok.Line "Expected an actor name at start of line")
+
 let parseScript (script: string) : ParseResult =
-    let folder state (lineNumber, line) =
-        match parseLine lineNumber line with
-        | Ok turn ->
-            { state with Turns = turn :: state.Turns }
-        | Error error ->
-            { state with Errors = error :: state.Errors }
+    let tokens = tokenize script |> List.toArray
+    let cursor = { Pos = 0; Tokens = tokens; Lines = sourceLines script }
 
-    script.Split([| '\n'; '\r' |], StringSplitOptions.RemoveEmptyEntries)
-    |> Array.mapi (fun index line -> index + 1, line.Trim())
-    |> Array.fold folder { Turns = []; Errors = [] }
-    |> fun result ->
-        {
-            Turns = List.rev result.Turns
-            Errors = List.rev result.Errors
-        }
+    let turns = System.Collections.Generic.List<Turn>()
+    let errors = System.Collections.Generic.List<ParseError>()
 
-/// Parse a script and fail when any line is invalid.
+    let rec loop () =
+        match (peek cursor).Token with
+        | TEof -> ()
+        | TNewline ->
+            advance cursor
+            loop ()
+        | _ ->
+            match parseTurn cursor with
+            | Ok turn ->
+                turns.Add turn
+                match (peek cursor).Token with
+                | TEof -> ()
+                | TNewline -> advance cursor
+                | _ ->
+                    let t = peek cursor
+                    errors.Add (err cursor t.Line "Unexpected tokens after turn")
+                    recoverToNextLine cursor
+            | Error e ->
+                errors.Add e
+                recoverToNextLine cursor
+            loop ()
+
+    loop ()
+    { Turns = List.ofSeq turns; Errors = List.ofSeq errors }
+
 let parseTurns (script: string) : Result<Turn list, ParseError list> =
     let result = parseScript script
-
     match result.Errors with
     | [] -> Ok result.Turns
     | errors -> Error errors

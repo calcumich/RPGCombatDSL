@@ -22,10 +22,29 @@ Bob defends
     Assert.Equal<Result<Turn list, ParseError list>>(Ok expected, turns)
 
 [<Fact>]
-let ``parseTurns returns an error list when unsupported lines are present`` () =
+let ``parseTurns parses uses and casts actions`` () =
+    let script = """
+Alice uses HealthPotion
+Bob casts Fireball on Alice
+Cleric casts Heal
+"""
+
+    let turns = parseTurns script
+
+    let expected =
+        [
+            { Actor = "Alice"; Action = UseItem "HealthPotion" }
+            { Actor = "Bob"; Action = CastSpell("Fireball", "Alice") }
+            { Actor = "Cleric"; Action = CastSpell("Heal", "") }
+        ]
+
+    Assert.Equal<Result<Turn list, ParseError list>>(Ok expected, turns)
+
+[<Fact>]
+let ``parseTurns returns an error list when an unknown action is used`` () =
     let script = """
 Alice attacks Bob
-Alice uses HealthPotion
+Alice frobnicates Bob
 """
 
     let result = parseTurns script
@@ -33,9 +52,9 @@ Alice uses HealthPotion
     let expected =
         [
             {
-                LineNumber = 2
-                LineText = "Alice uses HealthPotion"
-                Message = "Unsupported command"
+                LineNumber = 3
+                LineText = "Alice frobnicates Bob"
+                Message = "Expected an action (attacks, defends, uses, casts)"
             }
         ]
 
@@ -45,7 +64,7 @@ Alice uses HealthPotion
 let ``parseScript returns both valid turns and invalid lines`` () =
     let script = """
 Alice attacks Bob
-Alice uses HealthPotion
+Alice frobnicates Bob
 Bob defends
 """
 
@@ -57,14 +76,20 @@ Bob defends
             { Actor = "Bob"; Action = Defend }
         ]
 
-    let expectedErrors =
-        [
-            {
-                LineNumber = 2
-                LineText = "Alice uses HealthPotion"
-                Message = "Unsupported command"
-            }
-        ]
-
     Assert.Equal<Turn list>(expectedTurns, result.Turns)
-    Assert.Equal<ParseError list>(expectedErrors, result.Errors)
+    Assert.Equal(1, result.Errors.Length)
+    Assert.Equal(3, result.Errors.[0].LineNumber)
+    Assert.Equal("Alice frobnicates Bob", result.Errors.[0].LineText)
+
+[<Fact>]
+let ``parseTurns reports missing target after attacks`` () =
+    let script = "Alice attacks"
+
+    let result = parseTurns script
+
+    match result with
+    | Error [ e ] ->
+        Assert.Equal(1, e.LineNumber)
+        Assert.Contains("target name after 'attacks'", e.Message)
+    | other ->
+        Assert.Fail(sprintf "Expected single error, got %A" other)
