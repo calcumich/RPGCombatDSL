@@ -15,20 +15,23 @@ let bob = {
 let characters = [ alice.Name, alice; bob.Name, bob ] |> Map.ofList
 
 let scriptText = """
+# A small demo script exercising every syntax form.
 Alice attacks Bob
 Bob defends
+if Bob.HP < 80 then Bob uses HealthPotion
 Alice uses HealthPotion
 Bob casts Fireball on Alice
+if Alice.HP < 50 then Alice defends else Alice attacks Bob
 """
 
-let simulateBattle turns =
-    let finalState = List.fold applyAction characters turns
+let simulateBattle statements =
+    let finalState = List.fold applyStatement characters statements
     for KeyValue(name, char) in finalState do
         printfn "%s - HP: %d" name char.Stats.HP
 
 [<EntryPoint>]
 let main _ =
-    match parseTurns scriptText with
+    match parseStatements scriptText with
     | Ok script ->
         simulateBattle script
         0

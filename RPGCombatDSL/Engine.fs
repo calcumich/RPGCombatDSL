@@ -38,3 +38,39 @@ let applyAction (characters: Map<string, Character>) (turn: Turn) : Map<string, 
             | _ -> target
         characters |> Map.add targetName updatedTarget
     | _ -> characters
+
+let private getStat (characters: Map<string, Character>) (name: string) (field: StatField) : int =
+    let s = characters.[name].Stats
+    match field with
+    | StatField.HP      -> s.HP
+    | StatField.Attack  -> s.Attack
+    | StatField.Defense -> s.Defense
+
+let private evalExpr (characters: Map<string, Character>) (expr: Expr) : int =
+    match expr with
+    | EIntLit n -> n
+    | EStatRef(name, field) -> getStat characters name field
+
+let private evalCondition (characters: Map<string, Character>) (Compare(lhs, op, rhs)) : bool =
+    let lv = evalExpr characters lhs
+    let rv = evalExpr characters rhs
+    match op with
+    | Lt -> lv < rv
+    | Le -> lv <= rv
+    | Gt -> lv > rv
+    | Ge -> lv >= rv
+    | Eq -> lv = rv
+    | Ne -> lv <> rv
+
+/// Apply a top-level statement. Conditionals are evaluated against the current
+/// character map; the chosen branch (or no branch) is then applied recursively.
+let rec applyStatement (characters: Map<string, Character>) (stmt: Statement) : Map<string, Character> =
+    match stmt with
+    | SAction turn -> applyAction characters turn
+    | SIf(cond, thenBranch, elseBranch) ->
+        if evalCondition characters cond then
+            applyStatement characters thenBranch
+        else
+            match elseBranch with
+            | Some s -> applyStatement characters s
+            | None -> characters
