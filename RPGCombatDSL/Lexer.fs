@@ -19,6 +19,11 @@ type Token =
     | TEqEq
     | TNeq
     | TString of string
+    | TTeam
+    | TRepeat
+    | TLBrace
+    | TRBrace
+    | TSemicolon
     | TNewline
     | TEof
 
@@ -34,9 +39,11 @@ let private keywordOrIdent (s: string) =
     | "uses" -> TUses
     | "casts" -> TCasts
     | "on" -> TOn
-    | "if" -> TIf
-    | "then" -> TThen
-    | "else" -> TElse
+    | "if"     -> TIf
+    | "then"   -> TThen
+    | "else"   -> TElse
+    | "team"   -> TTeam
+    | "repeat" -> TRepeat
     | _ -> TIdent s
 
 let tokenize (source: string) : PositionedToken list =
@@ -118,6 +125,9 @@ let tokenize (source: string) : PositionedToken list =
             | _ ->
                 emit (TIdent (string c))
                 i <- i + 1
+        elif c = '{' then emit TLBrace;    i <- i + 1
+        elif c = '}' then emit TRBrace;    i <- i + 1
+        elif c = ';' then emit TSemicolon; i <- i + 1
         else
             // Unknown character: emit as a single-char identifier so the parser
             // reports a meaningful error on the offending line.

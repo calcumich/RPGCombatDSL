@@ -15,7 +15,7 @@ Bob defends
 
     let expected =
         [
-            SAction { Actor = "Alice"; Action = Attack "Bob" }
+            SAction { Actor = "Alice"; Action = Attack (NamedTarget "Bob") }
             SAction { Actor = "Bob"; Action = Defend }
         ]
 
@@ -34,8 +34,8 @@ Cleric casts Heal
     let expected =
         [
             SAction { Actor = "Alice"; Action = UseItem "HealthPotion" }
-            SAction { Actor = "Bob"; Action = CastSpell("Fireball", "Alice") }
-            SAction { Actor = "Cleric"; Action = CastSpell("Heal", "") }
+            SAction { Actor = "Bob"; Action = CastSpell("Fireball", NamedTarget "Alice") }
+            SAction { Actor = "Cleric"; Action = CastSpell("Heal", NamedTarget "") }
         ]
 
     Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, statements)
@@ -72,7 +72,7 @@ Bob defends
 
     let expectedStatements =
         [
-            SAction { Actor = "Alice"; Action = Attack "Bob" }
+            SAction { Actor = "Alice"; Action = Attack (NamedTarget "Bob") }
             SAction { Actor = "Bob"; Action = Defend }
         ]
 
@@ -135,7 +135,7 @@ let ``parseStatements parses if then else statement`` () =
         [
             SIf(
                 Compare(EStatRef("Alice", StatField.HP), Gt, EIntLit 50),
-                SAction { Actor = "Alice"; Action = Attack "Bob" },
+                SAction { Actor = "Alice"; Action = Attack (NamedTarget "Bob") },
                 Some (SAction { Actor = "Alice"; Action = Defend }))
         ]
     Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
@@ -181,7 +181,7 @@ Bob defends
     let result = parseStatements script
     let expected =
         [
-            SAction { Actor = "Alice"; Action = Attack "Bob" }
+            SAction { Actor = "Alice"; Action = Attack (NamedTarget "Bob") }
             SAction { Actor = "Bob"; Action = Defend }
         ]
     Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
@@ -191,7 +191,7 @@ let ``parseStatements accepts quoted multi-word names`` () =
     let script = "\"Cave Troll\" attacks \"Sir Reginald\""
     let result = parseStatements script
     let expected =
-        [ SAction { Actor = "Cave Troll"; Action = Attack "Sir Reginald" } ]
+        [ SAction { Actor = "Cave Troll"; Action = Attack (NamedTarget "Sir Reginald") } ]
     Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
 
 [<Fact>]
@@ -206,3 +206,124 @@ let ``parseStatements accepts quoted name in condition`` () =
                 None)
         ]
     Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+[<Fact>]
+let ``parseStatements parses attacks weakest with no group`` () =
+    let result = parseStatements "Alice attacks weakest"
+    let expected =
+        [ SAction { Actor = "Alice"; Action = Attack (TargetSelector(Weakest, AnyGroup)) } ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+[<Fact>]
+let ``parseStatements parses attacks weakest enemy`` () =
+    let result = parseStatements "Alice attacks weakest enemy"
+    let expected =
+        [ SAction { Actor = "Alice"; Action = Attack (TargetSelector(Weakest, EnemyGroup)) } ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+[<Fact>]
+let ``parseStatements parses attacks strongest ally`` () =
+    let result = parseStatements "Bob attacks strongest ally"
+    let expected =
+        [ SAction { Actor = "Bob"; Action = Attack (TargetSelector(Strongest, AllyGroup)) } ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+[<Fact>]
+let ``parseStatements parses casts on lowest ally (lowest is alias for Weakest)`` () =
+    let result = parseStatements "Cleric casts Heal on lowest ally"
+    let expected =
+        [ SAction { Actor = "Cleric"; Action = CastSpell("Heal", TargetSelector(Weakest, AllyGroup)) } ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+[<Fact>]
+let ``parseStatements parses attacks random`` () =
+    let result = parseStatements "Alice attacks random"
+    let expected =
+        [ SAction { Actor = "Alice"; Action = Attack (TargetSelector(Random, AnyGroup)) } ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+[<Fact>]
+let ``parseStatements parses attacks random enemy`` () =
+    let result = parseStatements "Alice attacks random enemy"
+    let expected =
+        [ SAction { Actor = "Alice"; Action = Attack (TargetSelector(Random, EnemyGroup)) } ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+[<Fact>]
+let ``parseStatements parses highest as alias for Strongest`` () =
+    let result = parseStatements "Alice attacks highest any"
+    let expected =
+        [ SAction { Actor = "Alice"; Action = Attack (TargetSelector(Strongest, AnyGroup)) } ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+// ── Team blocks ──────────────────────────────────────────────────────────────
+
+[<Fact>]
+let ``parseStatements parses team declaration with semicolon-separated members`` () =
+    let result = parseStatements "team Heroes { Alice; Bob; Cleric }"
+    let expected = [ STeamDecl("Heroes", ["Alice"; "Bob"; "Cleric"]) ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+[<Fact>]
+let ``parseStatements parses team declaration with newline-separated members`` () =
+    let result = parseStatements "team Villains {\nDragon\nOrc\n}"
+    let expected = [ STeamDecl("Villains", ["Dragon"; "Orc"]) ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+[<Fact>]
+let ``parseStatements parses team declaration with single member`` () =
+    let result = parseStatements "team Solo { Alice }"
+    let expected = [ STeamDecl("Solo", ["Alice"]) ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+// ── Repeat blocks ─────────────────────────────────────────────────────────────
+
+[<Fact>]
+let ``parseStatements parses repeat block with single body statement`` () =
+    let result = parseStatements "repeat 3 {\nAlice attacks Bob\n}"
+    let expected =
+        [ SRepeat(3, [ SAction { Actor = "Alice"; Action = Attack(NamedTarget "Bob") } ]) ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+[<Fact>]
+let ``parseStatements parses repeat block with multiple body statements`` () =
+    let result = parseStatements "repeat 2 {\nAlice attacks Bob\nBob defends\n}"
+    let expected =
+        [ SRepeat(2, [
+            SAction { Actor = "Alice"; Action = Attack(NamedTarget "Bob") }
+            SAction { Actor = "Bob";   Action = Defend }
+          ]) ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+[<Fact>]
+let ``parseStatements parses repeat 0`` () =
+    let result = parseStatements "repeat 0 {\nAlice attacks Bob\n}"
+    let expected = [ SRepeat(0, [ SAction { Actor = "Alice"; Action = Attack(NamedTarget "Bob") } ]) ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+// ── Named group targeting ─────────────────────────────────────────────────────
+
+[<Fact>]
+let ``parseStatements parses attacks weakest named group`` () =
+    let result = parseStatements "Alice attacks weakest Heroes"
+    let expected = [ SAction { Actor = "Alice"; Action = Attack(TargetSelector(Weakest, NamedGroup "Heroes")) } ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+[<Fact>]
+let ``parseStatements parses attacks random named group`` () =
+    let result = parseStatements "Alice attacks random Villains"
+    let expected = [ SAction { Actor = "Alice"; Action = Attack(TargetSelector(Random, NamedGroup "Villains")) } ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+[<Fact>]
+let ``parseStatements parses casts on strongest named group`` () =
+    let result = parseStatements "Cleric casts Heal on strongest Heroes"
+    let expected = [ SAction { Actor = "Cleric"; Action = CastSpell("Heal", TargetSelector(Strongest, NamedGroup "Heroes")) } ]
+    Assert.Equal<Result<Statement list, ParseError list>>(Ok expected, result)
+
+[<Fact>]
+let ``parseStatements reports error when repeat has no integer`` () =
+    let result = parseStatements "repeat Alice attacks Bob"
+    match result with
+    | Error errors -> Assert.Contains("Expected integer count after 'repeat'", errors |> List.map (fun e -> e.Message) |> String.concat " ")
+    | Ok _ -> Assert.Fail "Expected parse error"

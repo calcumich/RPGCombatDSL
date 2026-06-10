@@ -5,13 +5,29 @@ type Stat = { HP: int; Attack: int; Defense: int }
 type Character = {
     Name: string
     Stats: Stat
+    Side: string
 }
 
+type Modifier =
+    | Weakest
+    | Strongest
+    | Random
+
+type Group =
+    | EnemyGroup
+    | AllyGroup
+    | AnyGroup
+    | NamedGroup of string
+
+type TargetSpec =
+    | NamedTarget of string
+    | TargetSelector of Modifier * Group
+
 type Action =
-    | Attack of string
+    | Attack of TargetSpec
     | Defend
     | UseItem of string
-    | CastSpell of string * string
+    | CastSpell of string * TargetSpec
 
 type Turn = {
     Actor: string
@@ -26,8 +42,8 @@ type StatField =
     | Attack
     | Defense
 
-/// An expression evaluated against the current world state. Numeric for now;
-/// will grow to cover targeting modifiers like `weakest enemy`.
+/// An expression evaluated against the current world state. Numeric only;
+/// targeting selectors (weakest enemy, lowest ally, etc.) use TargetSpec instead.
 type Expr =
     | EIntLit of int
     | EStatRef of character: string * field: StatField
@@ -46,5 +62,7 @@ type Condition =
 
 /// A top-level script item.
 type Statement =
-    | SAction of Turn
-    | SIf of Condition * thenBranch: Statement * elseBranch: Statement option
+    | SAction  of Turn
+    | SIf      of Condition * thenBranch: Statement * elseBranch: Statement option
+    | STeamDecl of teamName: string * members: string list
+    | SRepeat  of count: int * body: Statement list

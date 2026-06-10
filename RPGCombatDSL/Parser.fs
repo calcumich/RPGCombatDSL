@@ -49,6 +49,41 @@ let private expectIdent (c: Cursor) (whatFor: string) : Result<string, ParseErro
     | _ ->
         Error (err c t.Line (sprintf "Expected %s" whatFor))
 
+let private parseModifier (word: string) : Modifier option =
+    match word.ToLowerInvariant() with
+    | "weakest" | "lowest"    -> Some Weakest
+    | "strongest" | "highest" -> Some Strongest
+    | "random"                -> Some Random
+    | _                       -> None
+
+let private parseGroup (word: string) : Group option =
+    match word.ToLowerInvariant() with
+    | "enemy" | "enemies" -> Some EnemyGroup
+    | "ally"  | "allies"  -> Some AllyGroup
+    | "any"               -> Some AnyGroup
+    | _                   -> None
+
+let private parseTarget (c: Cursor) (whatFor: string) : Result<TargetSpec, ParseError> =
+    let t = peek c
+    match t.Token with
+    | TIdent word | TString word ->
+        match parseModifier word with
+        | Some modifier ->
+            advance c
+            let group =
+                match (peek c).Token with
+                | TIdent g | TString g ->
+                    match parseGroup g with
+                    | Some grp -> advance c; grp
+                    | None     -> advance c; NamedGroup g
+                | _ -> AnyGroup
+            Ok (TargetSelector(modifier, group))
+        | None ->
+            advance c
+            Ok (NamedTarget word)
+    | _ ->
+        Error (err c t.Line (sprintf "Expected %s" whatFor))
+
 let private parseExpr (c: Cursor) : Result<Expr, ParseError> =
     let t = peek c
     match t.Token with
@@ -97,7 +132,7 @@ let private parseAction (c: Cursor) : Result<Action, ParseError> =
     match t.Token with
     | TAttacks ->
         advance c
-        expectIdent c "target name after 'attacks'" |> Result.map Attack
+        parseTarget c "target name after 'attacks'" |> Result.map Attack
     | TDefends ->
         advance c
         Ok Defend
@@ -112,10 +147,10 @@ let private parseAction (c: Cursor) : Result<Action, ParseError> =
             match (peek c).Token with
             | TOn ->
                 advance c
-                expectIdent c "target name after 'on'"
+                parseTarget c "target name after 'on'"
                 |> Result.map (fun target -> CastSpell(spell, target))
             | _ ->
-                Ok (CastSpell(spell, ""))
+                Ok (CastSpell(spell, NamedTarget ""))
     | _ ->
         Error (err c t.Line "Expected an action (attacks, defends, uses, casts)")
 
@@ -137,8 +172,10 @@ let private expectToken (c: Cursor) (expected: Token) (message: string) : Result
 
 let rec private parseStatement (c: Cursor) : Result<Statement, ParseError> =
     match (peek c).Token with
-    | TIf -> parseIf c
-    | _ -> parseTurn c |> Result.map SAction
+    | TIf     -> parseIf c
+    | TTeam   -> parseTeam c
+    | TRepeat -> parseRepeat c
+    | _       -> parseTurn c |> Result.map SAction
 
 and private parseIf (c: Cursor) : Result<Statement, ParseError> =
     advance c  // consume TIf
@@ -155,6 +192,58 @@ and private parseIf (c: Cursor) : Result<Statement, ParseError> =
                     |> Result.map (fun els -> SIf(cond, thn, Some els))
                 | _ ->
                     Ok (SIf(cond, thn, None)))))
+
+and private parseTeam (c: Cursor) : Result<Statement, ParseError> =
+    advance c  // consume TTeam
+    expectIdent c "team name after 'team'"
+    |> Result.bind (fun teamName ->
+        expectToken c TLBrace "Expected '{' after team name"
+        |> Result.bind (fun () ->
+            let rec parseMembers acc =
+                match (peek c).Token with
+                | TRBrace ->
+                    advance c
+                    Ok (STeamDecl(teamName, List.rev acc))
+                | TSemicolon | TNewline ->
+                    advance c
+                    parseMembers acc
+                | TIdent name | TString name ->
+                    advance c
+                    parseMembers (name :: acc)
+                | _ ->
+                    let t = peek c
+                    Error (err c t.Line "Expected member name or '}' in team block")
+            parseMembers []))
+
+and private parseBlock (c: Cursor) : Result<Statement list, ParseError> =
+    expectToken c TLBrace "Expected '{'"
+    |> Result.bind (fun () ->
+        let stmts = System.Collections.Generic.List<Statement>()
+        let rec loop () =
+            match (peek c).Token with
+            | TRBrace -> advance c; Ok (List.ofSeq stmts)
+            | TEof    -> Error (err c (peek c).Line "Unexpected end of file inside block")
+            | TNewline -> advance c; loop ()
+            | _ ->
+                match parseStatement c with
+                | Error e -> Error e
+                | Ok stmt ->
+                    stmts.Add stmt
+                    match (peek c).Token with
+                    | TNewline -> advance c
+                    | _ -> ()
+                    loop ()
+        loop ())
+
+and private parseRepeat (c: Cursor) : Result<Statement, ParseError> =
+    advance c  // consume TRepeat
+    let t = peek c
+    match t.Token with
+    | TInt n ->
+        advance c
+        parseBlock c |> Result.map (fun body -> SRepeat(n, body))
+    | _ ->
+        Error (err c t.Line "Expected integer count after 'repeat'")
 
 let parseScript (script: string) : ParseResult =
     let tokens = tokenize script |> List.toArray
