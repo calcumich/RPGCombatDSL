@@ -41,50 +41,72 @@ let private resolveTarget
                 Some candidates.[idx].Name
 
 let private applyActionWithTargeting
-        (includeDefeatedTargets: bool)
+        (includeDefeated: bool)
         (characters: Map<string, Character>)
-        (turn: Turn) : Map<string, Character> =
+        (turn: Turn) : Map<string, Character> * BattleEvent list =
     match Map.tryFind turn.Actor characters with
-    | None -> characters
+    | None -> characters, []
     | Some actor ->
+    let turnEvent = TurnTaken(turn.Actor, turn.Action)
     match turn.Action with
     | Attack spec ->
-        match resolveTarget includeDefeatedTargets characters turn.Actor spec with
-        | None -> characters
+        match resolveTarget includeDefeated characters turn.Actor spec with
+        | None ->
+            characters, [turnEvent; TargetMissed(turn.Actor, "no eligible target")]
         | Some targetName ->
             let target = characters.[targetName]
             let damage = max 1 (actor.Stats.Attack - target.Stats.Defense)
             let updatedTarget = { target with Stats = { target.Stats with HP = target.Stats.HP - damage } }
-            characters |> Map.add targetName updatedTarget
+            let newState = characters |> Map.add targetName updatedTarget
+            let defeated = if updatedTarget.Stats.HP <= 0 then [CharDefeated targetName] else []
+            newState, [turnEvent; DamageDealt(turn.Actor, targetName, damage)] @ defeated
     | Defend ->
         let updatedActor = { actor with Stats = { actor.Stats with Defense = actor.Stats.Defense + 5 } }
-        characters |> Map.add turn.Actor updatedActor
+        characters |> Map.add turn.Actor updatedActor,
+        [turnEvent; StatBoosted(turn.Actor, StatField.Defense, 5)]
     | UseItem itemName ->
-        let updatedActor =
-            match itemName.ToLowerInvariant() with
-            | "healthpotion" -> { actor with Stats = { actor.Stats with HP = actor.Stats.HP + 20 } }
-            | "powerpotion"  -> { actor with Stats = { actor.Stats with Attack = actor.Stats.Attack + 5 } }
-            | "defensepotion" -> { actor with Stats = { actor.Stats with Defense = actor.Stats.Defense + 5 } }
-            | _ -> actor
-        characters |> Map.add turn.Actor updatedActor
+        match itemName.ToLowerInvariant() with
+        | "healthpotion" ->
+            let updated = { actor with Stats = { actor.Stats with HP = actor.Stats.HP + 20 } }
+            characters |> Map.add turn.Actor updated,
+            [turnEvent; HealApplied(turn.Actor, turn.Actor, 20)]
+        | "powerpotion" ->
+            let updated = { actor with Stats = { actor.Stats with Attack = actor.Stats.Attack + 5 } }
+            characters |> Map.add turn.Actor updated,
+            [turnEvent; StatBoosted(turn.Actor, StatField.Attack, 5)]
+        | "defensepotion" ->
+            let updated = { actor with Stats = { actor.Stats with Defense = actor.Stats.Defense + 5 } }
+            characters |> Map.add turn.Actor updated,
+            [turnEvent; StatBoosted(turn.Actor, StatField.Defense, 5)]
+        | _ ->
+            characters |> Map.add turn.Actor actor, [turnEvent]
     | CastSpell(spellName, spec) ->
-        match resolveTarget includeDefeatedTargets characters turn.Actor spec with
-        | None -> characters
+        match resolveTarget includeDefeated characters turn.Actor spec with
+        | None ->
+            characters, [turnEvent; TargetMissed(turn.Actor, "no eligible target")]
         | Some targetName ->
             let target = characters.[targetName]
-            let updatedTarget =
-                match spellName.ToLowerInvariant() with
-                | "heal" -> { target with Stats = { target.Stats with HP = target.Stats.HP + 15 } }
-                | "fireball" ->
-                    let damage = max 1 (30 - target.Stats.Defense)
-                    { target with Stats = { target.Stats with HP = target.Stats.HP - damage } }
-                | _ -> target
-            characters |> Map.add targetName updatedTarget
+            match spellName.ToLowerInvariant() with
+            | "heal" ->
+                let updated = { target with Stats = { target.Stats with HP = target.Stats.HP + 15 } }
+                characters |> Map.add targetName updated,
+                [turnEvent; HealApplied(turn.Actor, targetName, 15)]
+            | "fireball" ->
+                let damage = max 1 (30 - target.Stats.Defense)
+                let updated = { target with Stats = { target.Stats with HP = target.Stats.HP - damage } }
+                let newState = characters |> Map.add targetName updated
+                let defeated = if updated.Stats.HP <= 0 then [CharDefeated targetName] else []
+                newState, [turnEvent; DamageDealt(turn.Actor, targetName, damage)] @ defeated
+            | _ ->
+                characters, [turnEvent]
 
 let applyAction (characters: Map<string, Character>) (turn: Turn) : Map<string, Character> =
+    applyActionWithTargeting true characters turn |> fst
+
+let applyActionWithEvents (characters: Map<string, Character>) (turn: Turn) : Map<string, Character> * BattleEvent list =
     applyActionWithTargeting true characters turn
 
-let private applyBattleAction (characters: Map<string, Character>) (turn: Turn) : Map<string, Character> =
+let private applyBattleAction (characters: Map<string, Character>) (turn: Turn) : Map<string, Character> * BattleEvent list =
     applyActionWithTargeting false characters turn
 
 let private getStat (characters: Map<string, Character>) (name: string) (field: StatField) : int =
@@ -217,7 +239,7 @@ let runBattle
                             | Error message ->
                                 Error [{ Character = actor.Name; Message = message }]
                             | Ok None -> Ok state
-                            | Ok (Some turn) -> Ok (applyBattleAction state turn)
+                            | Ok (Some turn) -> Ok (applyBattleAction state turn |> fst)
                         | _ -> Ok state
 
                 match List.fold folder (Ok state) initialOrder with

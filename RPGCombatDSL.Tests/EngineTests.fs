@@ -502,3 +502,106 @@ let ``BattleResult exposes a Trace field`` () =
         Trace = [ RoundStarted 1 ]
     }
     Assert.Equal(1, result.Trace.Length)
+
+// ── applyActionWithEvents ────────────────────────────────────────────────────
+
+[<Fact>]
+let ``applyActionWithEvents always emits TurnTaken as first event`` () =
+    let characters = [ actor "Alice" 100 20 5 "" ] |> Map.ofList
+    let turn = { Actor = "Alice"; Action = Defend }
+
+    let (_, events) = applyActionWithEvents characters turn
+
+    Assert.Equal<BattleEvent>(TurnTaken("Alice", Defend), List.head events)
+
+[<Fact>]
+let ``applyActionWithEvents attack emits DamageDealt`` () =
+    // damage = max 1 (20 - 2) = 18
+    let characters =
+        [ actor "Alice" 100 20 5 "heroes"; actor "Bob" 50 10 2 "villains" ]
+        |> Map.ofList
+    let turn = { Actor = "Alice"; Action = Attack(NamedTarget "Bob") }
+
+    let (_, events) = applyActionWithEvents characters turn
+
+    Assert.Contains(DamageDealt("Alice", "Bob", 18), events)
+
+[<Fact>]
+let ``applyActionWithEvents attack that defeats target emits CharDefeated`` () =
+    // damage = max 1 (20 - 2) = 18, Bob HP = 10 → -8 (defeated)
+    let characters =
+        [ actor "Alice" 100 20 5 "heroes"; actor "Bob" 10 10 2 "villains" ]
+        |> Map.ofList
+    let turn = { Actor = "Alice"; Action = Attack(NamedTarget "Bob") }
+
+    let (_, events) = applyActionWithEvents characters turn
+
+    Assert.Contains(CharDefeated "Bob", events)
+
+[<Fact>]
+let ``applyActionWithEvents attack with no valid target emits TargetMissed`` () =
+    let characters = [ actor "Alice" 100 20 5 "heroes" ] |> Map.ofList
+    let turn = { Actor = "Alice"; Action = Attack(NamedTarget "Unknown") }
+
+    let (_, events) = applyActionWithEvents characters turn
+
+    Assert.Contains(TargetMissed("Alice", "no eligible target"), events)
+
+[<Fact>]
+let ``applyActionWithEvents defend emits StatBoosted Defense 5`` () =
+    let characters = [ actor "Alice" 100 20 5 "" ] |> Map.ofList
+    let turn = { Actor = "Alice"; Action = Defend }
+
+    let (_, events) = applyActionWithEvents characters turn
+
+    Assert.Contains(StatBoosted("Alice", StatField.Defense, 5), events)
+
+[<Fact>]
+let ``applyActionWithEvents UseItem HealthPotion emits HealApplied`` () =
+    let characters = [ actor "Alice" 60 20 5 "" ] |> Map.ofList
+    let turn = { Actor = "Alice"; Action = UseItem "HealthPotion" }
+
+    let (_, events) = applyActionWithEvents characters turn
+
+    Assert.Contains(HealApplied("Alice", "Alice", 20), events)
+
+[<Fact>]
+let ``applyActionWithEvents UseItem PowerPotion emits StatBoosted Attack 5`` () =
+    let characters = [ actor "Alice" 100 20 5 "" ] |> Map.ofList
+    let turn = { Actor = "Alice"; Action = UseItem "PowerPotion" }
+
+    let (_, events) = applyActionWithEvents characters turn
+
+    Assert.Contains(StatBoosted("Alice", StatField.Attack, 5), events)
+
+[<Fact>]
+let ``applyActionWithEvents UseItem DefensePotion emits StatBoosted Defense 5`` () =
+    let characters = [ actor "Alice" 100 20 5 "" ] |> Map.ofList
+    let turn = { Actor = "Alice"; Action = UseItem "DefensePotion" }
+
+    let (_, events) = applyActionWithEvents characters turn
+
+    Assert.Contains(StatBoosted("Alice", StatField.Defense, 5), events)
+
+[<Fact>]
+let ``applyActionWithEvents CastSpell Heal emits HealApplied`` () =
+    let characters =
+        [ actor "Cleric" 70 8 8 "heroes"; actor "Alice" 50 20 5 "heroes" ]
+        |> Map.ofList
+    let turn = { Actor = "Cleric"; Action = CastSpell("Heal", NamedTarget "Alice") }
+
+    let (_, events) = applyActionWithEvents characters turn
+
+    Assert.Contains(HealApplied("Cleric", "Alice", 15), events)
+
+[<Fact>]
+let ``applyActionWithEvents CastSpell Fireball emits DamageDealt`` () =
+    // damage = max 1 (30 - 5) = 25
+    let characters =
+        [ actor "Alice" 100 20 5 "heroes"; actor "Bob" 100 10 5 "villains" ]
+        |> Map.ofList
+    let turn = { Actor = "Alice"; Action = CastSpell("Fireball", NamedTarget "Bob") }
+
+    let (_, events) = applyActionWithEvents characters turn
+
+    Assert.Contains(DamageDealt("Alice", "Bob", 25), events)
