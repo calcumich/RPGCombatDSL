@@ -9,6 +9,7 @@
     <Compile Include="LexerTests.fs" />
     <Compile Include="ParserTests.fs" />
     <Compile Include="EngineTests.fs" />
+    <Compile Include="NarratorTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
