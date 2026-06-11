@@ -605,3 +605,12 @@ let ``applyActionWithEvents CastSpell Fireball emits DamageDealt`` () =
     let (_, events) = applyActionWithEvents characters turn
 
     Assert.Contains(DamageDealt("Alice", "Bob", 25), events)
+
+[<Fact>]
+let ``applyActionWithEvents CastSpell with no valid target emits TargetMissed`` () =
+    let characters = [ actor "Alice" 100 20 5 "heroes" ] |> Map.ofList
+    let turn = { Actor = "Alice"; Action = CastSpell("Fireball", NamedTarget "Unknown") }
+
+    let (_, events) = applyActionWithEvents characters turn
+
+    Assert.Contains(TargetMissed("Alice", "no eligible target"), events)

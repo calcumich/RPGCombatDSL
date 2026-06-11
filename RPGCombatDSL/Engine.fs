@@ -79,7 +79,7 @@ let private applyActionWithTargeting
             characters |> Map.add turn.Actor updated,
             [turnEvent; StatBoosted(turn.Actor, StatField.Defense, 5)]
         | _ ->
-            characters |> Map.add turn.Actor actor, [turnEvent]
+            characters, [turnEvent]
     | CastSpell(spellName, spec) ->
         match resolveTarget includeDefeated characters turn.Actor spec with
         | None ->
