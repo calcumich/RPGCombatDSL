@@ -319,3 +319,186 @@ let ``team decl followed by named group targeting works end to end`` () =
     let state4 = applyStatement state3 (SAction { Actor = "Alice"; Action = Attack(TargetSelector(Weakest, NamedGroup "Villains")) })
     // damage = max 1 (20 - 3) = 17
     Assert.Equal(60 - 17, state4["Goblin"].Stats.HP)
+
+// ── Behavior scripts ─────────────────────────────────────────────────────────
+
+[<Fact>]
+let ``chooseBehaviorAction returns first reachable action`` () =
+    let state =
+        [ actor "Alice" 100 20 5 "heroes"
+          actor "Bob"    90 10 5 "villains" ]
+        |> Map.ofList
+    let statements =
+        [
+            SIf(
+                Compare(EStatRef("Alice", StatField.HP), Lt, EIntLit 50),
+                SAction { Actor = "Alice"; Action = UseItem "HealthPotion" },
+                None)
+            SAction { Actor = "Alice"; Action = Attack(NamedTarget "Bob") }
+            SAction { Actor = "Alice"; Action = Defend }
+        ]
+
+    let result = chooseBehaviorAction "Alice" state statements
+
+    Assert.Equal<Result<Turn option, string>>(
+        Ok (Some { Actor = "Alice"; Action = Attack(NamedTarget "Bob") }),
+        result)
+
+[<Fact>]
+let ``chooseBehaviorAction uses matching conditional branch`` () =
+    let state =
+        [ actor "Alice" 30 20 5 "heroes"
+          actor "Bob"   90 10 5 "villains" ]
+        |> Map.ofList
+    let statements =
+        [
+            SIf(
+                Compare(EStatRef("Alice", StatField.HP), Lt, EIntLit 50),
+                SAction { Actor = "Alice"; Action = UseItem "HealthPotion" },
+                Some (SAction { Actor = "Alice"; Action = Attack(NamedTarget "Bob") }))
+        ]
+
+    let result = chooseBehaviorAction "Alice" state statements
+
+    Assert.Equal<Result<Turn option, string>>(
+        Ok (Some { Actor = "Alice"; Action = UseItem "HealthPotion" }),
+        result)
+
+[<Fact>]
+let ``chooseBehaviorAction returns none when no statement is reachable`` () =
+    let state = [ actor "Alice" 100 20 5 "heroes" ] |> Map.ofList
+    let statements =
+        [
+            SIf(
+                Compare(EStatRef("Alice", StatField.HP), Lt, EIntLit 50),
+                SAction { Actor = "Alice"; Action = UseItem "HealthPotion" },
+                None)
+            STeamDecl("Heroes", ["Alice"])
+            SRepeat(0, [ SAction { Actor = "Alice"; Action = Defend } ])
+        ]
+
+    let result = chooseBehaviorAction "Alice" state statements
+
+    Assert.Equal<Result<Turn option, string>>(Ok None, result)
+
+[<Fact>]
+let ``chooseBehaviorAction rejects action for a different actor`` () =
+    let state =
+        [ actor "Alice" 100 20 5 "heroes"
+          actor "Bob"    90 10 5 "villains" ]
+        |> Map.ofList
+    let statements =
+        [ SAction { Actor = "Bob"; Action = Attack(NamedTarget "Alice") } ]
+
+    match chooseBehaviorAction "Alice" state statements with
+    | Error message -> Assert.Contains("contains an action for 'Bob'", message)
+    | Ok value -> Assert.Fail(sprintf "Expected behavior ownership error, got %A" value)
+
+// ── Battle loop ──────────────────────────────────────────────────────────────
+
+[<Fact>]
+let ``runBattle runs fixed initiative until one side wins`` () =
+    let alice = snd (actor "Alice" 100 20 5 "heroes")
+    let bob = snd (actor "Bob" 30 10 5 "villains")
+    let scripts =
+        [
+            "Alice", [ SAction { Actor = "Alice"; Action = Attack(NamedTarget "Bob") } ]
+            "Bob", [ SAction { Actor = "Bob"; Action = Attack(NamedTarget "Alice") } ]
+        ]
+        |> Map.ofList
+
+    let result = runBattle defaultBattleConfig [ alice; bob ] scripts
+
+    match result with
+    | Ok battle ->
+        Assert.Equal<BattleOutcome>(Winner "heroes", battle.Outcome)
+        Assert.Equal(2, battle.RoundsCompleted)
+        Assert.True(battle.FinalState["Bob"].Stats.HP <= 0)
+    | Error errors -> Assert.Fail(sprintf "Expected battle result, got %A" errors)
+
+[<Fact>]
+let ``runBattle skips defeated characters before their turn`` () =
+    let alice = snd (actor "Alice" 100 50 5 "heroes")
+    let bob = snd (actor "Bob" 10 50 5 "villains")
+    let scripts =
+        [
+            "Alice", [ SAction { Actor = "Alice"; Action = Attack(NamedTarget "Bob") } ]
+            "Bob", [ SAction { Actor = "Bob"; Action = Attack(NamedTarget "Alice") } ]
+        ]
+        |> Map.ofList
+
+    let result = runBattle defaultBattleConfig [ alice; bob ] scripts
+
+    match result with
+    | Ok battle ->
+        Assert.Equal<BattleOutcome>(Winner "heroes", battle.Outcome)
+        Assert.Equal(100, battle.FinalState["Alice"].Stats.HP)
+    | Error errors -> Assert.Fail(sprintf "Expected battle result, got %A" errors)
+
+[<Fact>]
+let ``runBattle excludes defeated targets from selectors`` () =
+    let alice = snd (actor "Alice" 100 20 5 "heroes")
+    let bob = snd (actor "Bob" 0 10 5 "villains")
+    let orc = snd (actor "Orc" 50 10 5 "villains")
+    let scripts =
+        [
+            "Alice", [ SAction { Actor = "Alice"; Action = Attack(TargetSelector(Weakest, EnemyGroup)) } ]
+            "Bob", [ SAction { Actor = "Bob"; Action = Defend } ]
+            "Orc", [ SAction { Actor = "Orc"; Action = Defend } ]
+        ]
+        |> Map.ofList
+
+    let result = runBattle { MaxRounds = 1 } [ alice; bob; orc ] scripts
+
+    match result with
+    | Ok battle ->
+        Assert.Equal(0, battle.FinalState["Bob"].Stats.HP)
+        Assert.Equal(35, battle.FinalState["Orc"].Stats.HP)
+    | Error errors -> Assert.Fail(sprintf "Expected battle result, got %A" errors)
+
+[<Fact>]
+let ``runBattle returns draw at max rounds`` () =
+    let alice = snd (actor "Alice" 100 20 5 "heroes")
+    let bob = snd (actor "Bob" 100 20 5 "villains")
+    let scripts =
+        [
+            "Alice", [ SAction { Actor = "Alice"; Action = Defend } ]
+            "Bob", [ SAction { Actor = "Bob"; Action = Defend } ]
+        ]
+        |> Map.ofList
+
+    let result = runBattle { MaxRounds = 3 } [ alice; bob ] scripts
+
+    match result with
+    | Ok battle ->
+        Assert.Equal<BattleOutcome>(Draw, battle.Outcome)
+        Assert.Equal(3, battle.RoundsCompleted)
+    | Error errors -> Assert.Fail(sprintf "Expected battle result, got %A" errors)
+
+[<Fact>]
+let ``runBattle reports missing behavior script`` () =
+    let alice = snd (actor "Alice" 100 20 5 "heroes")
+    let bob = snd (actor "Bob" 100 20 5 "villains")
+    let scripts =
+        [ "Alice", [ SAction { Actor = "Alice"; Action = Defend } ] ]
+        |> Map.ofList
+
+    let result = runBattle defaultBattleConfig [ alice; bob ] scripts
+
+    match result with
+    | Error [ error ] ->
+        Assert.Equal("Bob", error.Character)
+        Assert.Equal("Missing behavior script.", error.Message)
+    | other -> Assert.Fail(sprintf "Expected one missing-script error, got %A" other)
+
+// ── Trace field ───────────────────────────────────────────────────────────────
+
+[<Fact>]
+let ``BattleResult exposes a Trace field`` () =
+    let result: BattleResult = {
+        Outcome = Draw
+        FinalState = Map.empty
+        RoundsCompleted = 0
+        Trace = [ RoundStarted 1 ]
+    }
+    Assert.Equal(1, result.Trace.Length)

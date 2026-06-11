@@ -66,3 +66,33 @@ type Statement =
     | SIf      of Condition * thenBranch: Statement * elseBranch: Statement option
     | STeamDecl of teamName: string * members: string list
     | SRepeat  of count: int * body: Statement list
+
+type BattleConfig = {
+    MaxRounds: int
+}
+
+type BattleOutcome =
+    | Winner of side: string
+    | Draw
+
+type BattleEvent =
+    | RoundStarted  of round: int
+    | TurnTaken     of actor: string * action: Action
+    | DamageDealt   of attacker: string * target: string * amount: int
+    | HealApplied   of source: string * target: string * amount: int
+    | StatBoosted   of actor: string * field: StatField * amount: int
+    | TargetMissed  of actor: string * reason: string
+    | CharDefeated  of name: string
+    | BattleEnded   of outcome: BattleOutcome * rounds: int
+
+type BattleResult = {
+    Outcome: BattleOutcome
+    FinalState: Map<string, Character>
+    RoundsCompleted: int
+    Trace: BattleEvent list
+}
+
+type BattleError = {
+    Character: string
+    Message: string
+}

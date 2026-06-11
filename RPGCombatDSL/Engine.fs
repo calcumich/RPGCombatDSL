@@ -1,13 +1,21 @@
 module Engine
 open Types
 
+let defaultBattleConfig = { MaxRounds = 100 }
+
 let private resolveTarget
+        (includeDefeated: bool)
         (characters: Map<string, Character>)
         (actorName: string)
         (spec: TargetSpec) : string option =
+    let isEligible (ch: Character) =
+        includeDefeated || ch.Stats.HP > 0
+
     match spec with
     | NamedTarget name ->
-        if characters.ContainsKey name then Some name else None
+        match Map.tryFind name characters with
+        | Some ch when isEligible ch -> Some name
+        | _ -> None
     | TargetSelector(modifier, group) ->
         let actorSide =
             characters |> Map.tryFind actorName |> Option.map (fun ch -> ch.Side) |> Option.defaultValue ""
@@ -15,6 +23,7 @@ let private resolveTarget
             characters
             |> Map.toSeq
             |> Seq.map snd
+            |> Seq.filter isEligible
             |> Seq.filter (fun ch ->
                 match group with
                 | EnemyGroup      -> ch.Side <> actorSide
@@ -31,13 +40,16 @@ let private resolveTarget
                 let idx = System.Random.Shared.Next(candidates.Length)
                 Some candidates.[idx].Name
 
-let applyAction (characters: Map<string, Character>) (turn: Turn) : Map<string, Character> =
+let private applyActionWithTargeting
+        (includeDefeatedTargets: bool)
+        (characters: Map<string, Character>)
+        (turn: Turn) : Map<string, Character> =
     match Map.tryFind turn.Actor characters with
     | None -> characters
     | Some actor ->
     match turn.Action with
     | Attack spec ->
-        match resolveTarget characters turn.Actor spec with
+        match resolveTarget includeDefeatedTargets characters turn.Actor spec with
         | None -> characters
         | Some targetName ->
             let target = characters.[targetName]
@@ -56,7 +68,7 @@ let applyAction (characters: Map<string, Character>) (turn: Turn) : Map<string, 
             | _ -> actor
         characters |> Map.add turn.Actor updatedActor
     | CastSpell(spellName, spec) ->
-        match resolveTarget characters turn.Actor spec with
+        match resolveTarget includeDefeatedTargets characters turn.Actor spec with
         | None -> characters
         | Some targetName ->
             let target = characters.[targetName]
@@ -68,6 +80,12 @@ let applyAction (characters: Map<string, Character>) (turn: Turn) : Map<string, 
                     { target with Stats = { target.Stats with HP = target.Stats.HP - damage } }
                 | _ -> target
             characters |> Map.add targetName updatedTarget
+
+let applyAction (characters: Map<string, Character>) (turn: Turn) : Map<string, Character> =
+    applyActionWithTargeting true characters turn
+
+let private applyBattleAction (characters: Map<string, Character>) (turn: Turn) : Map<string, Character> =
+    applyActionWithTargeting false characters turn
 
 let private getStat (characters: Map<string, Character>) (name: string) (field: StatField) : int =
     let s = characters.[name].Stats
@@ -113,3 +131,97 @@ let rec applyStatement (characters: Map<string, Character>) (stmt: Statement) : 
     | SRepeat(count, body) ->
         [1..count]
         |> List.fold (fun state _ -> List.fold applyStatement state body) characters
+
+let rec private chooseFromStatement
+        (actorName: string)
+        (characters: Map<string, Character>)
+        (stmt: Statement) : Result<Turn option, string> =
+    match stmt with
+    | SAction turn ->
+        if turn.Actor = actorName then Ok (Some turn)
+        else Error (sprintf "Behavior for '%s' contains an action for '%s'." actorName turn.Actor)
+    | SIf(cond, thenBranch, elseBranch) ->
+        if evalCondition characters cond then
+            chooseFromStatement actorName characters thenBranch
+        else
+            match elseBranch with
+            | Some branch -> chooseFromStatement actorName characters branch
+            | None -> Ok None
+    | STeamDecl _ ->
+        Ok None
+    | SRepeat(count, body) ->
+        if count <= 0 then Ok None
+        else chooseFromStatements actorName characters body
+
+and private chooseFromStatements
+        (actorName: string)
+        (characters: Map<string, Character>)
+        (statements: Statement list) : Result<Turn option, string> =
+    match statements with
+    | [] -> Ok None
+    | stmt :: rest ->
+        match chooseFromStatement actorName characters stmt with
+        | Error message -> Error message
+        | Ok (Some turn) -> Ok (Some turn)
+        | Ok None -> chooseFromStatements actorName characters rest
+
+let chooseBehaviorAction
+        (actorName: string)
+        (characters: Map<string, Character>)
+        (statements: Statement list) : Result<Turn option, string> =
+    chooseFromStatements actorName characters statements
+
+let private livingSides (characters: Map<string, Character>) : string list =
+    characters
+    |> Map.toList
+    |> List.choose (fun (_, ch) -> if ch.Stats.HP > 0 then Some ch.Side else None)
+    |> List.distinct
+
+let private battleOutcome (characters: Map<string, Character>) : BattleOutcome option =
+    match livingSides characters with
+    | [ side ] -> Some (Winner side)
+    | [] -> Some Draw
+    | _ -> None
+
+let runBattle
+        (config: BattleConfig)
+        (initialOrder: Character list)
+        (behaviorScripts: Map<string, Statement list>) : Result<BattleResult, BattleError list> =
+    let maxRounds = max 0 config.MaxRounds
+    let initialState = initialOrder |> List.map (fun ch -> ch.Name, ch) |> Map.ofList
+
+    let missingScriptErrors =
+        initialOrder
+        |> List.choose (fun ch ->
+            if behaviorScripts.ContainsKey ch.Name then None
+            else Some { Character = ch.Name; Message = "Missing behavior script." })
+
+    if not missingScriptErrors.IsEmpty then
+        Error missingScriptErrors
+    else
+        let rec runRound round state =
+            match battleOutcome state with
+            | Some outcome ->
+                Ok { Outcome = outcome; FinalState = state; RoundsCompleted = round; Trace = [] }
+            | None when round >= maxRounds ->
+                Ok { Outcome = Draw; FinalState = state; RoundsCompleted = round; Trace = [] }
+            | None ->
+                let folder resultState actor =
+                    match resultState with
+                    | Error _ as error -> error
+                    | Ok state ->
+                        match Map.tryFind actor.Name state with
+                        | Some currentActor when currentActor.Stats.HP > 0 ->
+                            let statements = behaviorScripts.[actor.Name]
+                            match chooseBehaviorAction actor.Name state statements with
+                            | Error message ->
+                                Error [{ Character = actor.Name; Message = message }]
+                            | Ok None -> Ok state
+                            | Ok (Some turn) -> Ok (applyBattleAction state turn)
+                        | _ -> Ok state
+
+                match List.fold folder (Ok state) initialOrder with
+                | Error errors -> Error errors
+                | Ok nextState -> runRound (round + 1) nextState
+
+        runRound 0 initialState
