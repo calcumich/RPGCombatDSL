@@ -240,29 +240,35 @@ let runBattle
     if not missingScriptErrors.IsEmpty then
         Error missingScriptErrors
     else
-        let rec runRound round state =
+        let rec runRound round state allEvents =
             match battleOutcome state with
             | Some outcome ->
-                Ok { Outcome = outcome; FinalState = state; RoundsCompleted = round; Trace = [] }
+                let trace = allEvents @ [BattleEnded(outcome, round)]
+                Ok { Outcome = outcome; FinalState = state; RoundsCompleted = round; Trace = trace }
             | None when round >= maxRounds ->
-                Ok { Outcome = Draw; FinalState = state; RoundsCompleted = round; Trace = [] }
+                let trace = allEvents @ [BattleEnded(Draw, round)]
+                Ok { Outcome = Draw; FinalState = state; RoundsCompleted = round; Trace = trace }
             | None ->
-                let folder resultState actor =
-                    match resultState with
+                let folder acc actor =
+                    match acc with
                     | Error _ as error -> error
-                    | Ok state ->
+                    | Ok (state, evts) ->
                         match Map.tryFind actor.Name state with
                         | Some currentActor when currentActor.Stats.HP > 0 ->
                             let statements = behaviorScripts.[actor.Name]
                             match chooseBehaviorAction actor.Name state statements with
                             | Error message ->
                                 Error [{ Character = actor.Name; Message = message }]
-                            | Ok None -> Ok state
-                            | Ok (Some turn) -> Ok (applyBattleAction state turn |> fst)
-                        | _ -> Ok state
+                            | Ok None -> Ok (state, evts)
+                            | Ok (Some turn) ->
+                                let (newState, turnEvts) = applyBattleAction state turn
+                                Ok (newState, evts @ turnEvts)
+                        | _ -> Ok (state, evts)
 
-                match List.fold folder (Ok state) initialOrder with
+                let roundStartEvents = [RoundStarted(round + 1)]
+                match List.fold folder (Ok (state, roundStartEvents)) initialOrder with
                 | Error errors -> Error errors
-                | Ok nextState -> runRound (round + 1) nextState
+                | Ok (nextState, roundEvts) ->
+                    runRound (round + 1) nextState (allEvents @ roundEvts)
 
-        runRound 0 initialState
+        runRound 0 initialState []

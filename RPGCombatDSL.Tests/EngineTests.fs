@@ -614,3 +614,58 @@ let ``applyActionWithEvents CastSpell with no valid target emits TargetMissed`` 
     let (_, events) = applyActionWithEvents characters turn
 
     Assert.Contains(TargetMissed("Alice", "no eligible target"), events)
+
+// ── Battle trace ──────────────────────────────────────────────────────────────
+
+[<Fact>]
+let ``runBattle trace contains exactly one BattleEnded event`` () =
+    let alice = snd (actor "Alice" 100 20 5 "heroes")
+    let bob   = snd (actor "Bob"    30 10 5 "villains")
+    let scripts =
+        [ "Alice", [ SAction { Actor = "Alice"; Action = Attack(NamedTarget "Bob") } ]
+          "Bob",   [ SAction { Actor = "Bob";   Action = Attack(NamedTarget "Alice") } ] ]
+        |> Map.ofList
+
+    let result = runBattle defaultBattleConfig [ alice; bob ] scripts
+
+    match result with
+    | Ok battle ->
+        let endEvents = battle.Trace |> List.filter (function BattleEnded _ -> true | _ -> false)
+        Assert.Equal(1, List.length endEvents)
+    | Error errors -> Assert.Fail(sprintf "%A" errors)
+
+[<Fact>]
+let ``runBattle trace RoundStarted count equals RoundsCompleted`` () =
+    let alice = snd (actor "Alice" 100 20 5 "heroes")
+    let bob   = snd (actor "Bob"    30 10 5 "villains")
+    let scripts =
+        [ "Alice", [ SAction { Actor = "Alice"; Action = Attack(NamedTarget "Bob") } ]
+          "Bob",   [ SAction { Actor = "Bob";   Action = Attack(NamedTarget "Alice") } ] ]
+        |> Map.ofList
+
+    let result = runBattle defaultBattleConfig [ alice; bob ] scripts
+
+    match result with
+    | Ok battle ->
+        let roundsStarted =
+            battle.Trace
+            |> List.filter (function RoundStarted _ -> true | _ -> false)
+            |> List.length
+        Assert.Equal(battle.RoundsCompleted, roundsStarted)
+    | Error errors -> Assert.Fail(sprintf "%A" errors)
+
+[<Fact>]
+let ``runBattle trace BattleEnded carries correct winner`` () =
+    let alice = snd (actor "Alice" 100 20 5 "heroes")
+    let bob   = snd (actor "Bob"    30 10 5 "villains")
+    let scripts =
+        [ "Alice", [ SAction { Actor = "Alice"; Action = Attack(NamedTarget "Bob") } ]
+          "Bob",   [ SAction { Actor = "Bob";   Action = Attack(NamedTarget "Alice") } ] ]
+        |> Map.ofList
+
+    let result = runBattle defaultBattleConfig [ alice; bob ] scripts
+
+    match result with
+    | Ok battle ->
+        Assert.Contains(BattleEnded(Winner "heroes", battle.RoundsCompleted), battle.Trace)
+    | Error errors -> Assert.Fail(sprintf "%A" errors)
