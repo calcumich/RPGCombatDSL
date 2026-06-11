@@ -132,27 +132,46 @@ let private evalCondition (characters: Map<string, Character>) (Compare(lhs, op,
     | Eq -> lv = rv
     | Ne -> lv <> rv
 
-/// Apply a top-level statement. Conditionals are evaluated against the current
-/// character map; the chosen branch (or no branch) is then applied recursively.
-let rec applyStatement (characters: Map<string, Character>) (stmt: Statement) : Map<string, Character> =
+/// Private event-aware implementation. Returns updated state and accumulated events.
+let rec private applyStatementImpl
+        (characters: Map<string, Character>)
+        (stmt: Statement) : Map<string, Character> * BattleEvent list =
     match stmt with
-    | SAction turn -> applyAction characters turn
+    | SAction turn ->
+        applyActionWithTargeting true characters turn
     | SIf(cond, thenBranch, elseBranch) ->
         if evalCondition characters cond then
-            applyStatement characters thenBranch
+            applyStatementImpl characters thenBranch
         else
             match elseBranch with
-            | Some s -> applyStatement characters s
-            | None -> characters
+            | Some s -> applyStatementImpl characters s
+            | None   -> characters, []
     | STeamDecl(teamName, members) ->
-        members
-        |> List.fold (fun state name ->
-            match Map.tryFind name state with
-            | Some ch -> Map.add name { ch with Side = teamName } state
-            | None    -> state) characters
+        let newState =
+            members
+            |> List.fold (fun state name ->
+                match Map.tryFind name state with
+                | Some ch -> Map.add name { ch with Side = teamName } state
+                | None    -> state) characters
+        newState, []
     | SRepeat(count, body) ->
         [1..count]
-        |> List.fold (fun state _ -> List.fold applyStatement state body) characters
+        |> List.fold
+            (fun (state, evts) _ ->
+                let (s2, newEvts) =
+                    List.fold
+                        (fun (st, ev) s ->
+                            let (st2, ev2) = applyStatementImpl st s
+                            (st2, ev @ ev2))
+                        (state, [])
+                        body
+                (s2, evts @ newEvts))
+            (characters, [])
+
+/// Apply a top-level statement. Conditionals are evaluated against the current
+/// character map; the chosen branch (or no branch) is then applied recursively.
+let applyStatement (characters: Map<string, Character>) (stmt: Statement) : Map<string, Character> =
+    applyStatementImpl characters stmt |> fst
 
 let rec private chooseFromStatement
         (actorName: string)
